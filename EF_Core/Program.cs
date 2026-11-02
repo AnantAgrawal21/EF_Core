@@ -1,6 +1,9 @@
 ﻿using BookHaven;
 using Microsoft.EntityFrameworkCore;
 
+using var cts = new CancellationTokenSource();
+CancellationToken ct = cts.Token;
+
 using var db = new BookHavenContext();
 
 // ---------------------------------------------------------------------------
@@ -13,42 +16,47 @@ using var db = new BookHavenContext();
 // IMPORTANT: EnsureCreated bypasses migrations. We replace both of these calls
 // with a real migration in Part 3. Never mix EnsureCreated() with migrations.
 // ---------------------------------------------------------------------------
-db.Database.EnsureDeleted();
-db.Database.EnsureCreated();
+await db.Database.EnsureDeletedAsync(ct);
+await db.Database.EnsureCreatedAsync(ct);
 
 // ---------------------------- CREATE ----------------------------
-db.Books.AddRange(
-    new Book { Title = "The Pragmatic Programmer", Author = "Hunt & Thomas", Price = 39.99m, PublishedOn = new DateOnly(1999, 10, 20) },
-    new Book { Title = "Clean Code", Author = "Robert C. Martin", Price = 32.50m, PublishedOn = new DateOnly(2008, 8, 1) },
-    new Book { Title = "Domain-Driven Design", Author = "Eric Evans", Price = 54.00m, PublishedOn = new DateOnly(2003, 8, 30) });
+await db.Books.AddRangeAsync(
+    new[]
+    {
+        new Book { Title = "The Pragmatic Programmer", Author = "Hunt & Thomas", Price = 39.99m, PublishedOn = new DateOnly(1999, 10, 20) },
+        new Book { Title = "Clean Code", Author = "Robert C. Martin", Price = 32.50m, PublishedOn = new DateOnly(2008, 8, 1) },
+        new Book { Title = "Domain-Driven Design", Author = "Eric Evans", Price = 54.00m, PublishedOn = new DateOnly(2003, 8, 30) }
+    },
+    ct);
 
-int inserted = db.SaveChanges();   // SaveChanges returns the number of affected rows
+int inserted = await db.SaveChangesAsync(ct);   // SaveChangesAsync returns the number of affected rows
 Console.WriteLine($"Inserted {inserted} rows.\n");
 
 // ---------------------------- READ ------------------------------
 Console.WriteLine("All books:");
-PrintAll();
+await PrintAllAsync(ct);
 
 // ---------------------------- UPDATE ----------------------------
 // Query the entity, change a property, save. The change tracker notices the
 // modified property and issues an UPDATE touching only that column.
-Book cleanCode = db.Books.Single(b => b.Title == "Clean Code");
+Book cleanCode = await db.Books.SingleAsync(b => b.Title == "Clean Code", ct);
 cleanCode.Price = 27.99m;
-db.SaveChanges();
+await db.SaveChangesAsync(ct);
 Console.WriteLine($"\nUpdated \"{cleanCode.Title}\" price -> {cleanCode.Price:0.00}\n");
 
 // ---------------------------- DELETE ----------------------------
-Book ddd = db.Books.Single(b => b.Title == "Domain-Driven Design");
-db.Books.Remove(ddd);
-db.SaveChanges();
+Book ddd = await db.Books.SingleAsync(b => b.Title == "Domain-Driven Design", ct);
+db.Books.Remove(ddd);   // Remove only marks the entity for deletion in-memory — no I/O, so no async overload exists.
+await db.SaveChangesAsync(ct);
 Console.WriteLine($"Deleted \"{ddd.Title}\".\n");
 
 Console.WriteLine("Final state:");
-PrintAll();
+await PrintAllAsync(ct);
 
 // Local helper — reads straight from the database each time it's called.
-void PrintAll()
+async Task PrintAllAsync(CancellationToken cancellationToken)
 {
-    foreach (Book b in db.Books.OrderBy(b => b.Id))
+    List<Book> books = await db.Books.OrderBy(b => b.Id).ToListAsync(cancellationToken);
+    foreach (Book b in books)
         Console.WriteLine($"  [{b.Id}] {b.Title,-28} {b.Author,-18} {b.Price,7:0.00}  {b.PublishedOn:yyyy-MM-dd}");
 }
